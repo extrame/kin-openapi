@@ -8,8 +8,8 @@ import (
 
 	"github.com/invopop/yaml"
 
-	"github.com/getkin/kin-openapi/openapi2"
-	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/extrame/kin-openapi/openapi2"
+	"github.com/extrame/kin-openapi/openapi3"
 )
 
 var (

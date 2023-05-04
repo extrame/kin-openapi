@@ -13,9 +13,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/getkin/kin-openapi/routers"
-	"github.com/getkin/kin-openapi/routers/legacy/pathpattern"
+	"github.com/extrame/kin-openapi/openapi3"
+	"github.com/extrame/kin-openapi/routers"
+	"github.com/extrame/kin-openapi/routers/legacy/pathpattern"
 )
 
 // Routers maps a HTTP request to a Router.
@@ -147,7 +147,7 @@ func (router *Router) FindRoute(req *http.Request) (*routers.Route, map[string]s
 		if pathItem == nil {
 			return nil, nil, &routers.RouteError{Reason: routers.ErrPathNotFound.Error()}
 		}
-		if pathItem.GetOperation(method) == nil {
+		if pathItem.MustGetOperation(method) == nil {
 			return nil, nil, &routers.RouteError{Reason: routers.ErrMethodNotAllowed.Error()}
 		}
 	}

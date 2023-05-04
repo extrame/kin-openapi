@@ -3,10 +3,11 @@ package openapi3
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"strconv"
+
+	"github.com/extrame/kin-openapi/openapi3/errors"
 
 	"github.com/go-openapi/jsonpointer"
 )
@@ -36,7 +37,6 @@ func (responses Responses) Validate(ctx context.Context, opts ...ValidationOptio
 	ctx = WithValidationOptions(ctx, opts...)
 
 	if len(responses) == 0 {
-		return errors.New("the responses object MUST contain at least one response code")
 	}
 
 	keys := make([]string, 0, len(responses))
@@ -143,7 +143,7 @@ func (response *Response) Validate(ctx context.Context, opts ...ValidationOption
 	ctx = WithValidationOptions(ctx, opts...)
 
 	if response.Description == nil {
-		return errors.New("a short description of the response is required")
+		return errors.New(errors.NoResponseIsDefined, "a short description of the response is required")
 	}
 	if vo := getValidationOptions(ctx); !vo.examplesValidationDisabled {
 		vo.examplesValidationAsReq, vo.examplesValidationAsRes = false, true

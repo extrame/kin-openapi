@@ -55,7 +55,7 @@ func (x ${type}Ref) MarshalJSON() ([]byte, error) {
 EOF
 
 	case $type in
-		# Callback) echo '	return x.Value.MarshalJSON()' ;; TODO: when https://github.com/getkin/kin-openapi/issues/687
+		# Callback) echo '	return x.Value.MarshalJSON()' ;; TODO: when https://github.com/extrame/kin-openapi/issues/687
 		Example) echo '	return x.Value.MarshalJSON()' ;;
 		Header) echo '	return x.Value.MarshalJSON()' ;;
 		Link) echo '	return x.Value.MarshalJSON()' ;;

@@ -15,8 +15,8 @@ import (
 
 	"github.com/gorilla/mux"
 
-	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/getkin/kin-openapi/routers"
+	"github.com/extrame/kin-openapi/openapi3"
+	"github.com/extrame/kin-openapi/routers"
 )
 
 var _ routers.Router = &Router{}
@@ -113,7 +113,7 @@ func (r *Router) FindRoute(req *http.Request) (*routers.Route, map[string]string
 			}
 			route := *r.routes[i]
 			route.Method = req.Method
-			route.Operation = route.Spec.Paths[route.Path].GetOperation(route.Method)
+			route.Operation = route.Spec.Paths[route.Path].MustGetOperation(route.Method)
 			return &route, vars, nil
 		}
 		switch match.MatchErr {

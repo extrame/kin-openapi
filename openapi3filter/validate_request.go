@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/getkin/kin-openapi/openapi3"
+	"github.com/extrame/kin-openapi/openapi3"
 )
 
 // ErrAuthenticationServiceMissing is returned when no authentication service

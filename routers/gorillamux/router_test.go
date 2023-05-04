@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/getkin/kin-openapi/openapi3"
-	"github.com/getkin/kin-openapi/routers"
+	"github.com/extrame/kin-openapi/openapi3"
+	"github.com/extrame/kin-openapi/routers"
 )
 
 func TestRouter(t *testing.T) {
@@ -87,7 +87,7 @@ func TestRouter(t *testing.T) {
 					}
 					return
 				}
-				if pathItem.GetOperation(method) == nil {
+				if pathItem.MustGetOperation(method) == nil {
 					if err.Error() != routers.ErrMethodNotAllowed.Error() {
 						t.Fatalf("'%s %s': should have returned %q, but it returned an error: %v", method, uri, routers.ErrMethodNotAllowed, err)
 					}

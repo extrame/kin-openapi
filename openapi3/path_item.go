@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+
+	"github.com/extrame/kin-openapi/openapi3/errors"
 )
 
 // PathItem is specified by OpenAPI/Swagger standard version 3.
@@ -139,7 +141,8 @@ func (pathItem *PathItem) Operations() map[string]*Operation {
 	return operations
 }
 
-func (pathItem *PathItem) GetOperation(method string) *Operation {
+// MustGetOperation returns the operation for the given HTTP method. panic if the operation does not exist.
+func (pathItem *PathItem) MustGetOperation(method string) *Operation {
 	switch method {
 	case http.MethodConnect:
 		return pathItem.Connect
@@ -162,6 +165,32 @@ func (pathItem *PathItem) GetOperation(method string) *Operation {
 	default:
 		panic(fmt.Errorf("unsupported HTTP method %q", method))
 	}
+}
+
+func (pathItem *PathItem) GetOperation(method string) (*Operation, error) {
+	var op *Operation
+	switch method {
+	case http.MethodDelete:
+		op = pathItem.Delete
+	case http.MethodGet:
+		op = pathItem.Get
+	case http.MethodHead:
+		op = pathItem.Head
+	case http.MethodOptions:
+		op = pathItem.Options
+	case http.MethodPatch:
+		op = pathItem.Patch
+	case http.MethodPost:
+		op = pathItem.Post
+	case http.MethodPut:
+		op = pathItem.Put
+	default:
+		return nil, errors.Errorf(errors.NoSuchHTTPMethod, "unsupported HTTP method %q", method)
+	}
+	if op == nil {
+		return nil, errors.Errorf(errors.NoSuchOperationIsDefinedInPath, "no HTTP method %q is defined", method)
+	}
+	return op, nil
 }
 
 func (pathItem *PathItem) SetOperation(method string, operation *Operation) {
