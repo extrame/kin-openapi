@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
 	"sort"
@@ -28,15 +29,12 @@ var ErrInvalidEmptyValue = errors.New("empty value is not allowed")
 //
 // Note: One can tune the behavior of uniqueItems: true verification
 // by registering a custom function with openapi3.RegisterArrayUniqueItemsChecker
-func ValidateRequest(ctx context.Context, input *RequestValidationInput) error {
-	var (
-		err error
-		me  openapi3.MultiError
-	)
+func ValidateRequest(ctx context.Context, input *RequestValidationInput) (err error) {
+	var me openapi3.MultiError
 
 	options := input.Options
 	if options == nil {
-		options = DefaultOptions
+		options = &Options{}
 	}
 	route := input.Route
 	operation := route.Operation
@@ -52,9 +50,8 @@ func ValidateRequest(ctx context.Context, input *RequestValidationInput) error {
 	}
 	if security != nil {
 		if err = ValidateSecurityRequirements(ctx, input, *security); err != nil && !options.MultiError {
-			return err
+			return
 		}
-
 		if err != nil {
 			me = append(me, err)
 		}
@@ -70,9 +67,8 @@ func ValidateRequest(ctx context.Context, input *RequestValidationInput) error {
 		}
 
 		if err = ValidateParameter(ctx, input, parameter); err != nil && !options.MultiError {
-			return err
+			return
 		}
-
 		if err != nil {
 			me = append(me, err)
 		}
@@ -81,9 +77,8 @@ func ValidateRequest(ctx context.Context, input *RequestValidationInput) error {
 	// For each parameter of the Operation
 	for _, parameter := range operationParameters {
 		if err = ValidateParameter(ctx, input, parameter.Value); err != nil && !options.MultiError {
-			return err
+			return
 		}
-
 		if err != nil {
 			me = append(me, err)
 		}
@@ -93,9 +88,8 @@ func ValidateRequest(ctx context.Context, input *RequestValidationInput) error {
 	requestBody := operation.RequestBody
 	if requestBody != nil && !options.ExcludeRequestBody {
 		if err = ValidateRequestBody(ctx, input, requestBody.Value); err != nil && !options.MultiError {
-			return err
+			return
 		}
-
 		if err != nil {
 			me = append(me, err)
 		}
@@ -104,8 +98,7 @@ func ValidateRequest(ctx context.Context, input *RequestValidationInput) error {
 	if len(me) > 0 {
 		return me
 	}
-
-	return nil
+	return
 }
 
 // ValidateParameter validates a parameter's value by JSON schema.
@@ -123,7 +116,7 @@ func ValidateParameter(ctx context.Context, input *RequestValidationInput, param
 
 	options := input.Options
 	if options == nil {
-		options = DefaultOptions
+		options = &Options{}
 	}
 
 	var value interface{}
@@ -144,11 +137,13 @@ func ValidateParameter(ctx context.Context, input *RequestValidationInput, param
 	}
 
 	// Set default value if needed
-	if value == nil && schema != nil && schema.Default != nil {
+	if !options.SkipSettingDefaults && value == nil && schema != nil && schema.Default != nil {
 		value = schema.Default
 		req := input.Request
 		switch parameter.In {
-		// case openapi3.ParameterInPath: TODO: no idea how to handle this
+		case openapi3.ParameterInPath:
+			// Path parameters are required.
+			// Next check `parameter.Required && !found` will catch this.
 		case openapi3.ParameterInQuery:
 			q := req.URL.Query()
 			q.Add(parameter.Name, fmt.Sprintf("%v", value))
@@ -160,8 +155,6 @@ func ValidateParameter(ctx context.Context, input *RequestValidationInput, param
 				Name:  parameter.Name,
 				Value: fmt.Sprintf("%v", value),
 			})
-		default:
-			return fmt.Errorf("unsupported parameter's 'in': %s", parameter.In)
 		}
 	}
 
@@ -186,6 +179,9 @@ func ValidateParameter(ctx context.Context, input *RequestValidationInput, param
 		opts = make([]openapi3.SchemaValidationOption, 0, 1)
 		opts = append(opts, openapi3.MultiErrors())
 	}
+	if options.customSchemaErrorFunc != nil {
+		opts = append(opts, openapi3.SetSchemaErrorMessageCustomizer(options.customSchemaErrorFunc))
+	}
 	if err = schema.VisitJSON(value, opts...); err != nil {
 		return &RequestError{Input: input, Parameter: parameter, Err: err}
 	}
@@ -206,7 +202,7 @@ func ValidateRequestBody(ctx context.Context, input *RequestValidationInput, req
 
 	options := input.Options
 	if options == nil {
-		options = DefaultOptions
+		options = &Options{}
 	}
 
 	if req.Body != http.NoBody && req.Body != nil {
@@ -221,7 +217,19 @@ func ValidateRequestBody(ctx context.Context, input *RequestValidationInput, req
 			}
 		}
 		// Put the data back into the input
-		req.Body = ioutil.NopCloser(bytes.NewReader(data))
+		req.Body = nil
+		if req.GetBody != nil {
+			if req.Body, err = req.GetBody(); err != nil {
+				req.Body = nil
+			}
+		}
+		if req.Body == nil {
+			req.ContentLength = int64(len(data))
+			req.GetBody = func() (io.ReadCloser, error) {
+				return io.NopCloser(bytes.NewReader(data)), nil
+			}
+			req.Body, _ = req.GetBody() // no error return
+		}
 	}
 
 	if len(data) == 0 {
@@ -264,19 +272,29 @@ func ValidateRequestBody(ctx context.Context, input *RequestValidationInput, req
 	}
 
 	defaultsSet := false
-	opts := make([]openapi3.SchemaValidationOption, 0, 3) // 3 potential opts here
+	opts := make([]openapi3.SchemaValidationOption, 0, 4) // 4 potential opts here
 	opts = append(opts, openapi3.VisitAsRequest())
-	opts = append(opts, openapi3.DefaultsSet(func() { defaultsSet = true }))
+	if !options.SkipSettingDefaults {
+		opts = append(opts, openapi3.DefaultsSet(func() { defaultsSet = true }))
+	}
 	if options.MultiError {
 		opts = append(opts, openapi3.MultiErrors())
+	}
+	if options.customSchemaErrorFunc != nil {
+		opts = append(opts, openapi3.SetSchemaErrorMessageCustomizer(options.customSchemaErrorFunc))
+	}
+	if options.ExcludeReadOnlyValidations {
+		opts = append(opts, openapi3.DisableReadOnlyValidation())
 	}
 
 	// Validate JSON with the schema
 	if err := contentType.Schema.Value.VisitJSON(value, opts...); err != nil {
+		schemaId := getSchemaIdentifier(contentType.Schema)
+		schemaId = prependSpaceIfNeeded(schemaId)
 		return &RequestError{
 			Input:       input,
 			RequestBody: requestBody,
-			Reason:      "doesn't match the schema",
+			Reason:      fmt.Sprintf("doesn't match schema%s", schemaId),
 			Err:         err,
 		}
 	}
@@ -292,7 +310,14 @@ func ValidateRequestBody(ctx context.Context, input *RequestValidationInput, req
 			}
 		}
 		// Put the data back into the input
-		req.Body = ioutil.NopCloser(bytes.NewReader(data))
+		if req.Body != nil {
+			req.Body.Close()
+		}
+		req.ContentLength = int64(len(data))
+		req.GetBody = func() (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(data)), nil
+		}
+		req.Body, _ = req.GetBody() // no error return
 	}
 
 	return nil
@@ -324,10 +349,6 @@ func ValidateSecurityRequirements(ctx context.Context, input *RequestValidationI
 
 // validateSecurityRequirement validates a single OpenAPI 3 security requirement
 func validateSecurityRequirement(ctx context.Context, input *RequestValidationInput, securityRequirement openapi3.SecurityRequirement) error {
-	doc := input.Route.Spec
-	securitySchemes := doc.Components.SecuritySchemes
-
-	// Ensure deterministic order
 	names := make([]string, 0, len(securityRequirement))
 	for name := range securityRequirement {
 		names = append(names, name)
@@ -337,11 +358,16 @@ func validateSecurityRequirement(ctx context.Context, input *RequestValidationIn
 	// Get authentication function
 	options := input.Options
 	if options == nil {
-		options = DefaultOptions
+		options = &Options{}
 	}
 	f := options.AuthenticationFunc
 	if f == nil {
 		return ErrAuthenticationServiceMissing
+	}
+
+	var securitySchemes openapi3.SecuritySchemes
+	if components := input.Route.Spec.Components; components != nil {
+		securitySchemes = components.SecuritySchemes
 	}
 
 	// For each scheme for the requirement

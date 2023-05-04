@@ -8,9 +8,10 @@ import (
 	"net/url"
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/getkin/kin-openapi/openapi3"
 	legacyrouter "github.com/getkin/kin-openapi/routers/legacy"
-	"github.com/stretchr/testify/require"
 )
 
 func TestValidatingRequestParameterAndSetDefault(t *testing.T) {
@@ -244,6 +245,142 @@ func TestValidateRequestBodyAndSetDefault(t *testing.T) {
                         }
                       }
                     }
+                  },
+                  "social_network": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "required": ["platform"],
+                        "properties": {
+                          "platform": {
+                            "type": "string",
+                            "enum": [
+                              "twitter"
+                            ]
+                          },
+                          "tw_link": {
+                            "type": "string",
+                            "default": "www.twitter.com"
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "required": ["platform"],
+                        "properties": {
+                          "platform": {
+                            "type": "string",
+                            "enum": [
+                              "facebook"
+                            ]
+                          },
+                          "fb_link": {
+                            "type": "string",
+                            "default": "www.facebook.com"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "social_network_2": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "required": ["platform"],
+                        "properties": {
+                          "platform": {
+                            "type": "string",
+                            "enum": [
+                              "twitter"
+                            ]
+                          },
+                          "tw_link": {
+                            "type": "string",
+                            "default": "www.twitter.com"
+                          }
+                        }
+                      },
+                      {
+                        "type": "object",
+                        "required": ["platform"],
+                        "properties": {
+                          "platform": {
+                            "type": "string",
+                            "enum": [
+                              "facebook"
+                            ]
+                          },
+                          "fb_link": {
+                            "type": "string",
+                            "default": "www.facebook.com"
+                          }
+                        }
+                      }
+                    ]
+                  },
+                  "contact": {
+                    "oneOf": [
+                      {
+                        "type": "object",
+                        "required": ["email"],
+                        "properties": {
+                          "email": {
+                            "type": "string"
+                          },
+                          "allow_image": {
+                            "type": "boolean",
+                            "default": true
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": ["phone"],
+                        "properties": {
+                          "phone": {
+                            "type": "string"
+                          },
+                          "allow_text": {
+                            "type": "boolean",
+                            "default": false
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "contact2": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "required": ["email"],
+                        "properties": {
+                          "email": {
+                            "type": "string"
+                          },
+                          "allow_image": {
+                            "type": "boolean",
+                            "default": true
+                          }
+                        },
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "required": ["phone"],
+                        "properties": {
+                          "phone": {
+                            "type": "string"
+                          },
+                          "allow_text": {
+                            "type": "boolean",
+                            "default": false
+                          }
+                        },
+                        "additionalProperties": false
+                      }
+                    ]
                   }
                 }
               }
@@ -280,13 +417,26 @@ func TestValidateRequestBodyAndSetDefault(t *testing.T) {
 		OP    string `json:"op,omitempty"`
 		Value int    `json:"value,omitempty"`
 	}
+	type socialNetwork struct {
+		Platform string `json:"platform,omitempty"`
+		FBLink   string `json:"fb_link,omitempty"`
+		TWLink   string `json:"tw_link,omitempty"`
+	}
+	type contact struct {
+		Email string `json:"email,omitempty"`
+		Phone string `json:"phone,omitempty"`
+	}
 	type body struct {
-		ID      string   `json:"id,omitempty"`
-		Name    string   `json:"name,omitempty"`
-		Code    int      `json:"code,omitempty"`
-		All     bool     `json:"all,omitempty"`
-		Page    *page    `json:"page,omitempty"`
-		Filters []filter `json:"filters,omitempty"`
+		ID             string         `json:"id,omitempty"`
+		Name           string         `json:"name,omitempty"`
+		Code           int            `json:"code,omitempty"`
+		All            bool           `json:"all,omitempty"`
+		Page           *page          `json:"page,omitempty"`
+		Filters        []filter       `json:"filters,omitempty"`
+		SocialNetwork  *socialNetwork `json:"social_network,omitempty"`
+		SocialNetwork2 *socialNetwork `json:"social_network_2,omitempty"`
+		Contact        *contact       `json:"contact,omitempty"`
+		Contact2       *contact       `json:"contact2,omitempty"`
 	}
 
 	testCases := []struct {
@@ -530,6 +680,98 @@ func TestValidateRequestBodyAndSetDefault(t *testing.T) {
       "value": 456
     }
   ]
+}
+        `, body)
+			},
+		},
+		{
+			name: "social_network(oneOf)",
+			body: body{
+				ID: "bt6kdc3d0cvp6u8u3ft0",
+				SocialNetwork: &socialNetwork{
+					Platform: "facebook",
+				},
+			},
+			bodyAssertion: func(t *testing.T, body string) {
+				require.JSONEq(t, `
+{
+  "id": "bt6kdc3d0cvp6u8u3ft0",
+  "name": "default",
+  "code": 123,
+  "all": false,
+  "social_network": {
+    "platform": "facebook",
+    "fb_link": "www.facebook.com"
+  }
+}
+        `, body)
+			},
+		},
+		{
+			name: "social_network_2(anyOf)",
+			body: body{
+				ID: "bt6kdc3d0cvp6u8u3ft0",
+				SocialNetwork2: &socialNetwork{
+					Platform: "facebook",
+				},
+			},
+			bodyAssertion: func(t *testing.T, body string) {
+				require.JSONEq(t, `
+{
+  "id": "bt6kdc3d0cvp6u8u3ft0",
+  "name": "default",
+  "code": 123,
+  "all": false,
+  "social_network_2": {
+    "platform": "facebook",
+    "fb_link": "www.facebook.com"
+  }
+}
+        `, body)
+			},
+		},
+		{
+			name: "contact(oneOf)",
+			body: body{
+				ID: "bt6kdc3d0cvp6u8u3ft0",
+				Contact: &contact{
+					Phone: "123456",
+				},
+			},
+			bodyAssertion: func(t *testing.T, body string) {
+				require.JSONEq(t, `
+{
+  "id": "bt6kdc3d0cvp6u8u3ft0",
+  "name": "default",
+  "code": 123,
+  "all": false,
+  "contact": {
+    "phone": "123456",
+    "allow_text": false
+  }
+}
+        `, body)
+			},
+		},
+		{
+			name: "contact(anyOf)",
+			body: body{
+				ID: "bt6kdc3d0cvp6u8u3ft0",
+				Contact2: &contact{
+					Phone: "123456",
+				},
+			},
+			bodyAssertion: func(t *testing.T, body string) {
+				require.JSONEq(t, `
+{
+  "id": "bt6kdc3d0cvp6u8u3ft0",
+  "name": "default",
+  "code": 123,
+  "all": false,
+  "contact2": {
+    "phone": "123456",
+    "allow_text": false
+  }
 }
         `, body)
 			},

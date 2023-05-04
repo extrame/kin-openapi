@@ -2,15 +2,15 @@ package openapi3
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-
-	"github.com/getkin/kin-openapi/jsoninfo"
+	"sort"
 )
 
 // Encoding is specified by OpenAPI/Swagger 3.0 standard.
-// See https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.0.3.md#encodingObject
+// See https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.0.3.md#encoding-object
 type Encoding struct {
-	ExtensionProps
+	Extensions map[string]interface{} `json:"-" yaml:"-"`
 
 	ContentType   string  `json:"contentType,omitempty" yaml:"contentType,omitempty"`
 	Headers       Headers `json:"headers,omitempty" yaml:"headers,omitempty"`
@@ -40,13 +40,44 @@ func (encoding *Encoding) WithHeaderRef(name string, ref *HeaderRef) *Encoding {
 }
 
 // MarshalJSON returns the JSON encoding of Encoding.
-func (encoding *Encoding) MarshalJSON() ([]byte, error) {
-	return jsoninfo.MarshalStrictStruct(encoding)
+func (encoding Encoding) MarshalJSON() ([]byte, error) {
+	m := make(map[string]interface{}, 5+len(encoding.Extensions))
+	for k, v := range encoding.Extensions {
+		m[k] = v
+	}
+	if x := encoding.ContentType; x != "" {
+		m["contentType"] = x
+	}
+	if x := encoding.Headers; len(x) != 0 {
+		m["headers"] = x
+	}
+	if x := encoding.Style; x != "" {
+		m["style"] = x
+	}
+	if x := encoding.Explode; x != nil {
+		m["explode"] = x
+	}
+	if x := encoding.AllowReserved; x {
+		m["allowReserved"] = x
+	}
+	return json.Marshal(m)
 }
 
 // UnmarshalJSON sets Encoding to a copy of data.
 func (encoding *Encoding) UnmarshalJSON(data []byte) error {
-	return jsoninfo.UnmarshalStrictStruct(data, encoding)
+	type EncodingBis Encoding
+	var x EncodingBis
+	if err := json.Unmarshal(data, &x); err != nil {
+		return err
+	}
+	_ = json.Unmarshal(data, &x.Extensions)
+	delete(x.Extensions, "contentType")
+	delete(x.Extensions, "headers")
+	delete(x.Extensions, "style")
+	delete(x.Extensions, "explode")
+	delete(x.Extensions, "allowReserved")
+	*encoding = Encoding(x)
+	return nil
 }
 
 // SerializationMethod returns a serialization method of request body.
@@ -65,11 +96,20 @@ func (encoding *Encoding) SerializationMethod() *SerializationMethod {
 }
 
 // Validate returns an error if Encoding does not comply with the OpenAPI spec.
-func (encoding *Encoding) Validate(ctx context.Context) error {
+func (encoding *Encoding) Validate(ctx context.Context, opts ...ValidationOption) error {
+	ctx = WithValidationOptions(ctx, opts...)
+
 	if encoding == nil {
 		return nil
 	}
-	for k, v := range encoding.Headers {
+
+	headers := make([]string, 0, len(encoding.Headers))
+	for k := range encoding.Headers {
+		headers = append(headers, k)
+	}
+	sort.Strings(headers)
+	for _, k := range headers {
+		v := encoding.Headers[k]
 		if err := ValidateIdentifier(k); err != nil {
 			return nil
 		}
@@ -88,10 +128,9 @@ func (encoding *Encoding) Validate(ctx context.Context) error {
 		sm.Style == SerializationPipeDelimited && sm.Explode,
 		sm.Style == SerializationPipeDelimited && !sm.Explode,
 		sm.Style == SerializationDeepObject && sm.Explode:
-		// it is a valid
 	default:
 		return fmt.Errorf("serialization method with style=%q and explode=%v is not supported by media type", sm.Style, sm.Explode)
 	}
 
-	return nil
+	return validateExtensions(ctx, encoding.Extensions)
 }

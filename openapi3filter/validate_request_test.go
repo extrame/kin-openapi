@@ -10,11 +10,12 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/routers"
 	"github.com/getkin/kin-openapi/routers/gorillamux"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func setupTestRouter(t *testing.T, spec string) routers.Router {
@@ -58,6 +59,9 @@ paths:
               properties:
                 subCategory:
                   type: string
+                category:
+                  type: string
+                  default: Sweets
       responses:
         '201':
           description: Created
@@ -94,6 +98,7 @@ components:
 
 	type testRequestBody struct {
 		SubCategory string `json:"subCategory"`
+		Category    string `json:"category,omitempty"`
 	}
 	type args struct {
 		requestBody *testRequestBody
@@ -101,18 +106,30 @@ components:
 		apiKey      string
 	}
 	tests := []struct {
-		name        string
-		args        args
-		expectedErr error
+		name                 string
+		args                 args
+		expectedModification bool
+		expectedErr          error
 	}{
 		{
-			name: "Valid request",
+			name: "Valid request with all fields set",
+			args: args{
+				requestBody: &testRequestBody{SubCategory: "Chocolate", Category: "Food"},
+				url:         "/category?category=cookies",
+				apiKey:      "SomeKey",
+			},
+			expectedModification: false,
+			expectedErr:          nil,
+		},
+		{
+			name: "Valid request without certain fields",
 			args: args{
 				requestBody: &testRequestBody{SubCategory: "Chocolate"},
 				url:         "/category?category=cookies",
 				apiKey:      "SomeKey",
 			},
-			expectedErr: nil,
+			expectedModification: true,
+			expectedErr:          nil,
 		},
 		{
 			name: "Invalid operation params",
@@ -121,7 +138,8 @@ components:
 				url:         "/category?invalidCategory=badCookie",
 				apiKey:      "SomeKey",
 			},
-			expectedErr: &RequestError{},
+			expectedModification: false,
+			expectedErr:          &RequestError{},
 		},
 		{
 			name: "Invalid request body",
@@ -130,7 +148,8 @@ components:
 				url:         "/category?category=cookies",
 				apiKey:      "SomeKey",
 			},
-			expectedErr: &RequestError{},
+			expectedModification: false,
+			expectedErr:          &RequestError{},
 		},
 		{
 			name: "Invalid security",
@@ -139,7 +158,8 @@ components:
 				url:         "/category?category=cookies",
 				apiKey:      "",
 			},
-			expectedErr: &SecurityRequirementsError{},
+			expectedModification: false,
+			expectedErr:          &SecurityRequirementsError{},
 		},
 		{
 			name: "Invalid request body and security",
@@ -148,16 +168,19 @@ components:
 				url:         "/category?category=cookies",
 				apiKey:      "",
 			},
-			expectedErr: &SecurityRequirementsError{},
+			expectedModification: false,
+			expectedErr:          &SecurityRequirementsError{},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var requestBody io.Reader
+			var originalBodySize int
 			if tc.args.requestBody != nil {
 				testingBody, err := json.Marshal(tc.args.requestBody)
 				require.NoError(t, err)
 				requestBody = bytes.NewReader(testingBody)
+				originalBodySize = len(testingBody)
 			}
 			req, err := http.NewRequest(http.MethodPost, tc.args.url, requestBody)
 			require.NoError(t, err)
@@ -179,6 +202,22 @@ components:
 			}
 			err = ValidateRequest(context.Background(), validationInput)
 			assert.IsType(t, tc.expectedErr, err, "ValidateRequest(): error = %v, expectedError %v", err, tc.expectedErr)
+			if tc.expectedErr != nil {
+				return
+			}
+			body, err := io.ReadAll(validationInput.Request.Body)
+			contentLen := int(validationInput.Request.ContentLength)
+			bodySize := len(body)
+			assert.NoError(t, err, "unable to read request body: %v", err)
+			assert.Equal(t, contentLen, bodySize, "expect ContentLength %d to equal body size %d", contentLen, bodySize)
+			bodyModified := originalBodySize != bodySize
+			assert.Equal(t, bodyModified, tc.expectedModification, "expect request body modification happened: %t, expected %t", bodyModified, tc.expectedModification)
+
+			validationInput.Request.Body, err = validationInput.Request.GetBody()
+			assert.NoError(t, err, "unable to re-generate body by GetBody(): %v", err)
+			body2, err := io.ReadAll(validationInput.Request.Body)
+			assert.NoError(t, err, "unable to read request body: %v", err)
+			assert.Equal(t, body, body2, "body by GetBody() is not matched")
 		})
 	}
 }
